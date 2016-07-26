@@ -19,32 +19,24 @@ import android.app.ActivityOptions;
 import android.app.FragmentManager;
 import android.content.Intent;
 import android.content.res.Configuration;
-import android.graphics.Color;
 import android.os.Bundle;
 import android.os.Handler;
+import android.support.design.widget.NavigationView;
+import android.support.v4.view.GravityCompat;
 import android.support.v4.widget.DrawerLayout;
 import android.support.v7.app.ActionBarDrawerToggle;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.app.MediaRouteButton;
-import android.support.v7.media.MediaRouter;
 import android.support.v7.widget.Toolbar;
-import android.view.Gravity;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
-import android.view.ViewGroup;
-import android.widget.AdapterView;
-import android.widget.ListView;
-import android.widget.SimpleAdapter;
 
 import com.example.android.uamp.R;
 import com.example.android.uamp.utils.LogHelper;
-import com.example.android.uamp.utils.PrefUtils;
-import com.example.android.uamp.utils.ResourceHelper;
-import com.github.amlcurran.showcaseview.ShowcaseView;
-import com.github.amlcurran.showcaseview.targets.ViewTarget;
 import com.google.android.libraries.cast.companionlibrary.cast.VideoCastManager;
 import com.google.android.libraries.cast.companionlibrary.cast.callbacks.VideoCastConsumerImpl;
+import com.google.android.libraries.cast.companionlibrary.widgets.IntroductoryOverlay;
 
 /**
  * Abstract activity with toolbar, navigation drawer and cast support. Needs to be extended by
@@ -67,8 +59,6 @@ public abstract class ActionBarCastActivity extends AppCompatActivity {
     private Toolbar mToolbar;
     private ActionBarDrawerToggle mDrawerToggle;
     private DrawerLayout mDrawerLayout;
-    private ListView mDrawerList;
-    private DrawerMenuContents mDrawerMenuContents;
 
     private boolean mToolbarInitialized;
 
@@ -91,40 +81,44 @@ public abstract class ActionBarCastActivity extends AppCompatActivity {
         }
 
         @Override
-        public void onCastDeviceDetected(final MediaRouter.RouteInfo info) {
-            // FTU stands for First Time Use:
-            if (!PrefUtils.isFtuShown(ActionBarCastActivity.this)) {
-                // If user is seeing the cast button for the first time, we will
-                // show an overlay that explains what that button means.
-                PrefUtils.setFtuShown(ActionBarCastActivity.this, true);
-
-                LogHelper.d(TAG, "Route is visible: ", info);
+        public void onCastAvailabilityChanged(boolean castPresent) {
+            if (castPresent) {
                 new Handler().postDelayed(new Runnable() {
 
                     @Override
                     public void run() {
                         if (mMediaRouteMenuItem.isVisible()) {
-                            LogHelper.d(TAG, "Cast Icon is visible: ", info.getName());
+                            LogHelper.d(TAG, "Cast Icon is visible");
                             showFtu();
                         }
                     }
                 }, DELAY_MILLIS);
             }
         }
+
     };
 
     private final DrawerLayout.DrawerListener mDrawerListener = new DrawerLayout.DrawerListener() {
         @Override
         public void onDrawerClosed(View drawerView) {
             if (mDrawerToggle != null) mDrawerToggle.onDrawerClosed(drawerView);
-            int position = mItemToOpenWhenDrawerCloses;
-            if (position >= 0) {
+            if (mItemToOpenWhenDrawerCloses >= 0) {
                 Bundle extras = ActivityOptions.makeCustomAnimation(
                     ActionBarCastActivity.this, R.anim.fade_in, R.anim.fade_out).toBundle();
 
-                Class activityClass = mDrawerMenuContents.getActivity(position);
-                startActivity(new Intent(ActionBarCastActivity.this, activityClass), extras);
-                finish();
+                Class activityClass = null;
+                switch (mItemToOpenWhenDrawerCloses) {
+                    case R.id.navigation_allmusic:
+                        activityClass = MusicPlayerActivity.class;
+                        break;
+                    case R.id.navigation_playlists:
+                        activityClass = PlaceholderActivity.class;
+                        break;
+                }
+                if (activityClass != null) {
+                    startActivity(new Intent(ActionBarCastActivity.this, activityClass), extras);
+                    finish();
+                }
             }
         }
 
@@ -235,7 +229,7 @@ public abstract class ActionBarCastActivity extends AppCompatActivity {
     @Override
     public void onBackPressed() {
         // If the drawer is open, back will close it
-        if (mDrawerLayout != null && mDrawerLayout.isDrawerOpen(Gravity.START)) {
+        if (mDrawerLayout != null && mDrawerLayout.isDrawerOpen(GravityCompat.START)) {
             mDrawerLayout.closeDrawers();
             return;
         }
@@ -269,21 +263,19 @@ public abstract class ActionBarCastActivity extends AppCompatActivity {
         }
         mToolbar.inflateMenu(R.menu.main);
 
-        mDrawerLayout = (DrawerLayout) findViewById(R.id.drawerLayout);
+        mDrawerLayout = (DrawerLayout) findViewById(R.id.drawer_layout);
         if (mDrawerLayout != null) {
-            mDrawerList = (ListView) findViewById(R.id.drawer_list);
-            if (mDrawerList == null) {
-                throw new IllegalStateException("A layout with a drawerLayout is required to" +
-                    "include a ListView with id 'drawerList'");
+            NavigationView navigationView = (NavigationView) findViewById(R.id.nav_view);
+            if (navigationView == null) {
+                throw new IllegalStateException("Layout requires a NavigationView " +
+                        "with id 'nav_view'");
             }
 
             // Create an ActionBarDrawerToggle that will handle opening/closing of the drawer:
             mDrawerToggle = new ActionBarDrawerToggle(this, mDrawerLayout,
                 mToolbar, R.string.open_content_drawer, R.string.close_content_drawer);
             mDrawerLayout.setDrawerListener(mDrawerListener);
-            mDrawerLayout.setStatusBarBackgroundColor(
-                ResourceHelper.getThemeColor(this, R.attr.colorPrimary, android.R.color.black));
-            populateDrawerItems();
+            populateDrawerItems(navigationView);
             setSupportActionBar(mToolbar);
             updateDrawerToggle();
         } else {
@@ -293,39 +285,22 @@ public abstract class ActionBarCastActivity extends AppCompatActivity {
         mToolbarInitialized = true;
     }
 
-    private void populateDrawerItems() {
-        mDrawerMenuContents = new DrawerMenuContents(this);
-        final int selectedPosition = mDrawerMenuContents.getPosition(this.getClass());
-        final int unselectedColor = Color.WHITE;
-        final int selectedColor = getResources().getColor(R.color.drawer_item_selected_background);
-        SimpleAdapter adapter = new SimpleAdapter(this, mDrawerMenuContents.getItems(),
-                R.layout.drawer_list_item,
-                new String[]{DrawerMenuContents.FIELD_TITLE, DrawerMenuContents.FIELD_ICON},
-                new int[]{R.id.drawer_item_title, R.id.drawer_item_icon}) {
-            @Override
-            public View getView(int position, View convertView, ViewGroup parent) {
-                View view = super.getView(position, convertView, parent);
-                int color = unselectedColor;
-                if (position == selectedPosition) {
-                    color = selectedColor;
-                }
-                view.setBackgroundColor(color);
-                return view;
-            }
-        };
-
-        mDrawerList.setOnItemClickListener(new AdapterView.OnItemClickListener() {
-           @Override
-           public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
-               if (position != selectedPosition) {
-                   view.setBackgroundColor(getResources().getColor(
-                       R.color.drawer_item_selected_background));
-                   mItemToOpenWhenDrawerCloses = position;
-               }
-               mDrawerLayout.closeDrawers();
-           }
-        });
-        mDrawerList.setAdapter(adapter);
+    private void populateDrawerItems(NavigationView navigationView) {
+        navigationView.setNavigationItemSelectedListener(
+                new NavigationView.OnNavigationItemSelectedListener() {
+                    @Override
+                    public boolean onNavigationItemSelected(MenuItem menuItem) {
+                        menuItem.setChecked(true);
+                        mItemToOpenWhenDrawerCloses = menuItem.getItemId();
+                        mDrawerLayout.closeDrawers();
+                        return true;
+                    }
+                });
+        if (MusicPlayerActivity.class.isAssignableFrom(getClass())) {
+            navigationView.setCheckedItem(R.id.navigation_allmusic);
+        } else if (PlaceholderActivity.class.isAssignableFrom(getClass())) {
+            navigationView.setCheckedItem(R.id.navigation_playlists);
+        }
     }
 
     protected void updateDrawerToggle() {
@@ -352,11 +327,12 @@ public abstract class ActionBarCastActivity extends AppCompatActivity {
         Menu menu = mToolbar.getMenu();
         View view = menu.findItem(R.id.media_route_menu_item).getActionView();
         if (view != null && view instanceof MediaRouteButton) {
-            new ShowcaseView.Builder(this)
-                    .setTarget(new ViewTarget(view))
-                    .setContentTitle(R.string.touch_to_cast)
-                    .hideOnTouchOutside()
+            IntroductoryOverlay overlay = new IntroductoryOverlay.Builder(this)
+                    .setMenuItem(mMediaRouteMenuItem)
+                    .setTitleText(R.string.touch_to_cast)
+                    .setSingleTime()
                     .build();
+            overlay.show();
         }
     }
 }

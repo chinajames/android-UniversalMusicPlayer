@@ -13,9 +13,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.example.android.uamp;
+package com.example.android.uamp.playback;
 
-import static android.media.session.MediaSession.QueueItem;
+import com.example.android.uamp.MusicService;
+
+import static android.support.v4.media.session.MediaSessionCompat.QueueItem;
 
 /**
  * Interface representing either Local or Remote Playback. The {@link MusicService} works
@@ -72,6 +74,11 @@ public interface Playback {
     void setCurrentStreamPosition(int pos);
 
     /**
+     * Query the underlying stream and update the internal last known stream position.
+     */
+    void updateLastKnownStreamPosition();
+
+    /**
      * @param item to play
      */
     void play(QueueItem item);
@@ -120,7 +127,7 @@ public interface Playback {
         /**
          * @param mediaId being currently played
          */
-        void onMetadataChanged(String mediaId);
+        void setCurrentMediaId(String mediaId);
     }
 
     /**
